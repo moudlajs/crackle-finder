@@ -8,6 +8,7 @@ import pytest
 from conftest import needs_ffmpeg
 from synth import SR
 
+from crackle_finder import detect as detect_module
 from crackle_finder.audio import load_mono
 from crackle_finder.detect import detect
 
@@ -44,7 +45,11 @@ def run_port(wav: Path, start: float = 0.0, end: float | None = None, **kw):
         (("--start", "0:20", "--end", "50"), {"start": 20.0, "end": 50.0}),
     ],
 )
-def test_port_matches_prototype(defects_wav, proto_args, port_kw):
+def test_port_matches_prototype(defects_wav, proto_args, port_kw, monkeypatch):
+    # Deliberate changes from the prototype: the clipping score cap (lifted here) and
+    # event labels preferring dropout > clipping. Uncapped, clipped frames almost always
+    # win the peak anyway, so on this fixture the labels match the prototype too.
+    monkeypatch.setattr(detect_module, "CLIP_SCORE_CAP", 10**9)
     start = port_kw.pop("start", 0.0)
     end = port_kw.pop("end", None)
     expected = run_prototype(defects_wav, *proto_args)
