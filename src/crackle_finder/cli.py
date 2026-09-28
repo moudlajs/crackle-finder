@@ -9,6 +9,8 @@ from crackle_finder import CrackleFinderError, __version__, audio, detect, repor
 
 log = logging.getLogger("crackle_finder")
 
+CLIP_SECONDS = 3.0
+
 
 def parse_time(value: str) -> float:
     """``90``, ``45:00`` or ``1:05:30`` -> seconds."""
@@ -26,6 +28,16 @@ def parse_time(value: str) -> float:
             f"invalid time {value!r}: minutes and seconds must be between 0 and 59"
         )
     return sum(n * 60**i for i, n in enumerate(reversed(numbers)))
+
+
+def positive_int(value: str) -> int:
+    try:
+        n = int(value)
+    except ValueError:
+        n = 0
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"expected a whole number >= 1, got {value!r}")
+    return n
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -62,12 +74,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="merge detections closer than this (default: %(default)s)",
     )
     p.add_argument(
+        "--top",
+        type=positive_int,
+        default=50,
+        metavar="N",
+        help="events shown in the table and cut as clips (default: %(default)s)",
+    )
+    p.add_argument(
         "--out",
         type=Path,
         default=Path("crackle-report"),
         metavar="DIR",
         help="report directory, one subfolder per input (default: %(default)s)",
     )
+    p.add_argument("--no-clips", action="store_true", help="don't cut mp3 clips of top events")
     p.add_argument("--verbose", action="store_true", help="show debug output")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p
@@ -95,10 +115,32 @@ def analyze(path: Path, args: argparse.Namespace) -> Path:
     report.write_timestamps(events, out / "timestamps.txt")
     report.write_labels(events, out / "labels.txt")
     report.write_json(events, out / "events.json", str(path), params)
-    print(f"{path.name}: {len(events)} event(s) -> {out}/")
-    if not events:
+    if not args.no_clips:
+        write_clips(path, events, out / "clips", args.top)
+
+    print(f"\n{path.name}: {len(events)} event(s) -> {out}/")
+    if events:
+        print(report.format_table(events, args.top))
+    else:
         log.info("Nothing found. Try a lower --z (e.g. 4) for more sensitivity.")
     return out
+
+
+def write_clips(src: Path, events: list[detect.Event], folder: Path, top: int) -> None:
+    """Cut a short mp3 centred on each of the ``top`` highest-scoring events."""
+    folder.mkdir(exist_ok=True)
+    for stale in folder.glob("*.mp3"):
+        stale.unlink()
+    shown = report.by_score(events)[:top]
+    log.info("Cutting %d clip(s)", len(shown))
+    for rank, e in enumerate(shown, 1):
+        middle = (e.start + e.end) / 2
+        audio.extract_clip(
+            str(src),
+            str(folder / report.clip_name(rank, e)),
+            middle - CLIP_SECONDS / 2,
+            CLIP_SECONDS,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:

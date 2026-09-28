@@ -23,6 +23,28 @@ def safe_name(name: str, max_len: int = 80) -> str:
     return cleaned[:max_len].rstrip("._-") or "untitled"
 
 
+def clip_name(rank: int, event: Event) -> str:
+    """``001_0h12m34s_crackle.mp3``: rank by score, event start, kind."""
+    total = int(event.start)
+    h, m, sec = total // 3600, total % 3600 // 60, total % 60
+    return f"{rank:03d}_{h}h{m:02d}m{sec:02d}s_{event.kind}.mp3"
+
+
+def format_table(events: list[Event], top: int) -> str:
+    """The ``top`` highest-scoring events as a plain-text table."""
+    shown = by_score(events)[:top]
+    lines = [
+        f"{len(events)} event(s), showing top {len(shown)} by score",
+        f"{'#':>4}  {'time':>8}  {'length':>6}  {'score':>6}  {'type':<8}  frames",
+    ]
+    lines += [
+        f"{rank:>4}  {format_timestamp(e.start):>8}  {e.end - e.start:5.2f}s  {e.score:6.0f}"
+        f"  {e.kind:<8}  {e.hits:>6}"
+        for rank, e in enumerate(shown, 1)
+    ]
+    return "\n".join(lines)
+
+
 def by_time(events: list[Event]) -> list[Event]:
     return sorted(events, key=lambda e: e.start)
 

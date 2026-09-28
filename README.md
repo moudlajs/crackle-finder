@@ -22,8 +22,9 @@ crackle-finder episode.mp3 --start 45:00 --end 1:05:30 --z 5
 ```
 
 Reports are written to `./crackle-report/<input-name>/`:
-`timestamps.txt` (paste into a message), `labels.txt` (Audacity label track) and
-`events.json`.
+`timestamps.txt` (paste into a message), `labels.txt` (Audacity label track),
+`events.json`, and `clips/` with a 3 s mp3 of each of the top `--top` events
+(skip with `--no-clips`). The top events are also printed as a table.
 
 ## License
 
