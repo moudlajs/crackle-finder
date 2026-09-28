@@ -88,6 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="report directory, one subfolder per input (default: %(default)s)",
     )
     p.add_argument("--no-clips", action="store_true", help="don't cut mp3 clips of top events")
+    p.add_argument("--no-plot", action="store_true", help="don't render overview.png")
     p.add_argument("--verbose", action="store_true", help="show debug output")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p
@@ -115,6 +116,11 @@ def analyze(path: Path, args: argparse.Namespace) -> Path:
     report.write_timestamps(events, out / "timestamps.txt")
     report.write_labels(events, out / "labels.txt")
     report.write_json(events, out / "events.json", str(path), params)
+    if not args.no_plot:
+        log.info("Rendering overview.png")
+        report.write_overview(
+            x, detect.SAMPLE_RATE, events, out / "overview.png", offset=args.start, title=path.name
+        )
     if not args.no_clips:
         write_clips(path, events, out / "clips", args.top)
 

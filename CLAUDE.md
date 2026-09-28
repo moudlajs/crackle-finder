@@ -8,7 +8,7 @@ recordings. Python 3.11+, uv, ffmpeg. See CONTRIBUTING.md for checks and PR flow
 - `src/crackle_finder/cli.py`: argparse + orchestration only
 - `audio.py`: ffmpeg (decode to mono float32 at 44.1 kHz, cut mp3 clips)
 - `detect.py`: pure numpy functions, no I/O
-- `report.py`: timestamps.txt, labels.txt (Audacity), events.json, stdout table, clip names
+- `report.py`: timestamps.txt, labels.txt (Audacity), events.json, stdout table, clip names, overview.png (matplotlib `Figure`, no pyplot)
 - `tests/reference/find_crackles.py`: the original prototype, kept verbatim and
   excluded from ruff; `tests/test_regression.py` runs it and asserts identical events.
 
