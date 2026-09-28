@@ -3,6 +3,7 @@
 import logging
 import shutil
 import subprocess
+from pathlib import Path
 
 import numpy as np
 
@@ -51,3 +52,19 @@ def extract_clip(src: str, dst: str, start: float, duration: float) -> None:
     if proc.returncode != 0:
         detail = proc.stderr.decode(errors="replace").strip()
         raise CrackleFinderError(f"ffmpeg could not extract a clip from {src}: {detail}")
+
+
+def write_fixed(src: str, dst: str) -> None:
+    """Write a declicked and declipped FLAC copy of the whole of ``src`` to ``dst``.
+
+    Dropouts are missing audio and cannot be repaired this way.
+    """
+    if Path(dst).resolve() == Path(src).resolve():
+        raise CrackleFinderError(f"refusing to overwrite the original {src}")
+    cmd = [require_ffmpeg(), "-nostdin", "-v", "error", "-y", "-i", str(src), "-vn"]
+    cmd += ["-af", "adeclick,adeclip", "-c:a", "flac", str(dst)]
+    log.debug("Running %s", " ".join(cmd))
+    proc = subprocess.run(cmd, capture_output=True, check=False)
+    if proc.returncode != 0:
+        detail = proc.stderr.decode(errors="replace").strip()
+        raise CrackleFinderError(f"ffmpeg could not write {dst}: {detail}")
