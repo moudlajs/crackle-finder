@@ -3,6 +3,7 @@
 import logging
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -35,11 +36,17 @@ def load_mono(path: str, sr: int, start: float = 0.0, end: float | None = None) 
         cmd += ["-t", str(end - start)]
     cmd += ["-ac", "1", "-ar", str(sr), "-f", "f32le", "-"]
     log.debug("Running %s", " ".join(cmd))
-    proc = subprocess.run(cmd, capture_output=True, check=False)
-    if proc.returncode != 0:
-        detail = proc.stderr.decode(errors="replace").strip()
-        raise CrackleFinderError(f"ffmpeg could not decode {path}: {detail}")
-    return np.frombuffer(proc.stdout, dtype=np.float32)
+    # subprocess.run() collects stdout in pieces and joins them, briefly holding the
+    # audio twice. Reading the pipe in one go grows a single buffer instead; stderr
+    # goes to a file so a chatty ffmpeg can't block on a full pipe meanwhile.
+    with tempfile.TemporaryFile() as err:
+        with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=err) as proc:
+            raw = proc.stdout.read()
+        if proc.returncode != 0:
+            err.seek(0)
+            detail = err.read().decode(errors="replace").strip()
+            raise CrackleFinderError(f"ffmpeg could not decode {path}: {detail}")
+    return np.frombuffer(raw, dtype=np.float32)
 
 
 def extract_clip(src: str, dst: str, start: float, duration: float) -> None:
