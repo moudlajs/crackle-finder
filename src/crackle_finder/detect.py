@@ -23,6 +23,9 @@ CLIP_MIN_SAMPLES = 3
 DROPOUT_DB = -60
 LOUD_DB = -35
 DROPOUT_BONUS = 5
+# Each clipped sample adds 1 to the score, up to this many. Uncapped (as in the
+# prototype) a clipped frame reaches ~2200 and crowds every other event out of the top N.
+CLIP_SCORE_CAP = 20
 MIN_FRAMES = 10
 CHUNK_FRAMES = 1200  # 60 s at 50 ms frames: bounds the float64 temporaries
 EPS = 1e-9
@@ -120,7 +123,7 @@ def frame_scores(
     kind = np.where(z_crest >= z_jump, CRACKLE, CLICK)
     kind = np.where(clipped, CLIPPING, kind)
     kind = np.where(dropout, DROPOUT, kind)
-    score = np.where(clipped, np.maximum(score, z + clip), score)
+    score = np.where(clipped, np.maximum(score, z + np.minimum(clip, CLIP_SCORE_CAP)), score)
     score = np.where(dropout, np.maximum(score, z + DROPOUT_BONUS), score)
     return score, kind
 
@@ -168,8 +171,22 @@ def detect(
                 start=offset + s * frame,
                 end=offset + (e + 1) * frame,
                 score=float(score[peak]),
-                kind=str(kind[peak]),
+                kind=event_kind(kind[s : e + 1], str(kind[peak])),
                 hits=int((seg > z).sum()),
             )
         )
     return events
+
+
+def event_kind(kinds: np.ndarray, peak_kind: str) -> str:
+    """Label an event with the same precedence a single frame uses.
+
+    Any dropout frame makes it a dropout, else any clipped frame makes it clipping;
+    otherwise the peak frame decides between crackle and click. With clipping scores
+    capped, a neighbouring crackle frame can outscore the clipped ones, and the event
+    would otherwise be mislabelled.
+    """
+    for kind in (DROPOUT, CLIPPING):
+        if kind in kinds:
+            return kind
+    return peak_kind

@@ -58,8 +58,8 @@ def test_end_to_end(defects_wav, defects, tmp_path, capsys):
     stdout = capsys.readouterr().out
     assert f"5 event(s) -> {folder}/" in stdout
     assert "showing top 5 by score" in stdout
-    # Clipping scores highest, so it is rank 1 in the table and the clips.
-    assert stdout.splitlines()[-5].split()[:2] == ["1", "0:00:25"]
+    # The dropout scores highest (its hard edges are huge sample jumps), so it is rank 1.
+    assert stdout.splitlines()[-5].split()[:2] == ["1", "0:00:33"]
     lines = (folder / "timestamps.txt").read_text().splitlines()
     assert lines[0].startswith("0:00:05  ")
     assert any(line.startswith("0:00:25  clipping") for line in lines)
@@ -107,7 +107,8 @@ def test_clips_of_top_events(defects_wav, tmp_path):
     clips = tmp_path / "r" / "episode_01" / "clips"
     assert cli.main([str(defects_wav), "--out", str(tmp_path / "r")]) == 0
     names = sorted(p.name for p in clips.iterdir())
-    assert names[0] == "001_0h00m25s_clipping.mp3"
+    assert names[0] == "001_0h00m33s_dropout.mp3"
+    assert "002_0h00m25s_clipping.mp3" in names
     assert len(names) == 5
     assert clip_duration(clips / names[0]) == pytest.approx(3.0, abs=0.1)
 

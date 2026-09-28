@@ -5,10 +5,12 @@ from synth import SR, speech_like
 from crackle_finder import CrackleFinderError
 from crackle_finder.detect import (
     CLICK,
+    CLIP_SCORE_CAP,
     CLIPPING,
     CRACKLE,
     DROPOUT,
     detect,
+    event_kind,
     frame_scores,
     merge_frames,
     robust_z,
@@ -101,3 +103,28 @@ def test_events_are_sorted_by_time(defects):
 def test_too_short_raises():
     with pytest.raises(CrackleFinderError, match="too short"):
         detect(np.zeros(SR // 10, dtype=np.float32), SR)
+
+
+def test_clipping_score_is_capped(defects):
+    clipping = [e for e in detect(defects.audio, SR) if e.kind == CLIPPING]
+    assert clipping
+    assert all(e.score <= 6.0 + CLIP_SCORE_CAP for e in clipping)
+
+
+def test_heavy_clipping_no_longer_scores_in_the_hundreds(defects):
+    # 0.3 s of 20x overdrive scored 1148 uncapped, far above every other event.
+    (clip,) = [e for e in detect(defects.audio, SR) if e.kind == CLIPPING]
+    assert clip.score == 6.0 + CLIP_SCORE_CAP
+
+
+@pytest.mark.parametrize(
+    ("kinds", "peak", "expected"),
+    [
+        (["crackle", "clipping", "crackle"], "crackle", "clipping"),
+        (["clipping", "dropout"], "clipping", "dropout"),
+        (["click", "crackle"], "click", "click"),
+        (["crackle"], "crackle", "crackle"),
+    ],
+)
+def test_event_kind_precedence(kinds, peak, expected):
+    assert event_kind(np.array(kinds), peak) == expected

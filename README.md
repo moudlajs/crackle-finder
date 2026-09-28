@@ -60,8 +60,8 @@ crackle-report/episode-42/
 ```
 0:01:35  crackle  (score 25)
 0:01:37  crackle  (score 25)
-0:05:01  clipping  (score 888)
-0:05:02  clipping  (score 756)
+0:05:01  clipping  (score 26)
+0:05:02  clipping  (score 26)
 0:06:52  crackle  (score 25)
 0:09:00  dropout  (score 47)
 0:10:55  crackle  (score 25)
@@ -73,9 +73,9 @@ and the top events on stdout, sorted by score:
 episode-42: 7 event(s) -> crackle-report/episode-42/
 7 event(s), showing top 7 by score
    #      time  length   score  type      frames
-   1   0:05:01   0.45s     888  clipping       8
-   2   0:05:02   0.45s     756  clipping       9
-   3   0:09:00   0.05s      47  dropout        1
+   1   0:09:00   0.05s      47  dropout        1
+   2   0:05:01   0.45s      26  clipping       8
+   3   0:05:02   0.45s      26  clipping       9
    4   0:01:37   0.05s      25  crackle        1
    5   0:10:55   0.05s      25  crackle        1
    6   0:01:35   0.85s      25  crackle        2
@@ -104,14 +104,17 @@ four measurements:
   sharp high-frequency spikes that speech rarely produces.
 - **click**: the largest jump between neighbouring samples, relative to the frame's
   loudness.
-- **clipping**: at least 3 samples above 98.5 % of full scale.
+- **clipping**: at least 3 samples above 98.5 % of full scale. Each clipped sample adds
+  1 to the score, up to 20, so heavy clipping ranks high without drowning out
+  everything else.
 - **dropout**: a frame below -60 dBFS sandwiched between two frames above -35 dBFS.
 
 Crackle and click values are turned into robust z-scores (median and MAD instead of
 mean and standard deviation, so the defects themselves don't skew the baseline). A
 frame is flagged when its score exceeds `--z`; clipping and dropouts are always
-flagged. Flagged frames closer than `--merge` seconds are merged into one event,
-labelled by its highest-scoring frame.
+flagged. Flagged frames closer than `--merge` seconds are merged into one event.
+An event containing a dropout or clipped frame is labelled as such; otherwise its
+highest-scoring frame decides between crackle and click.
 
 ## Limitations
 
@@ -120,8 +123,6 @@ labelled by its highest-scoring frame.
 - **Mono downmix**: a defect in only one channel is diluted when the channels are mixed.
 - **Dropouts** are only caught when they are short (one silent frame, about 50-100 ms)
   and surrounded by speech. Longer gaps look like pauses.
-- **Clipping scores** grow with the number of clipped samples, so heavy clipping
-  outranks everything else in the top-N list.
 - **Memory**: the decoded audio is held in RAM, about 0.75 GB per hour of recording.
 - Scores are relative to the recording itself, so they are not comparable between files.
 
