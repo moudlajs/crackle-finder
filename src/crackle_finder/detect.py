@@ -24,6 +24,7 @@ DROPOUT_DB = -60
 LOUD_DB = -35
 DROPOUT_BONUS = 5
 MIN_FRAMES = 10
+CHUNK_FRAMES = 1200  # 60 s at 50 ms frames: bounds the float64 temporaries
 EPS = 1e-9
 
 CRACKLE, CLICK, CLIPPING, DROPOUT = "crackle", "click", "clipping", "dropout"
@@ -48,8 +49,47 @@ def robust_z(v: np.ndarray) -> np.ndarray:
     return (v - med) / mad
 
 
+def frame_features(
+    x: np.ndarray, sr: int, n: int, chunk_frames: int = CHUNK_FRAMES
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Per-frame ``(rms, hf_crest, jump, clip)`` of ``x``, whose length is a multiple of ``n``.
+
+    Works through ``chunk_frames`` frames at a time so the float64 temporaries stay
+    small on multi-hour files. The high-pass filter state and the previous sample
+    carry across chunks, so the result is identical to processing ``x`` in one go.
+    """
+    frames = len(x) // n
+    rms, hf_crest, jump = (np.empty(frames) for _ in range(3))
+    clip = np.empty(frames, dtype=np.int64)
+    sos = butter(4, HF_CUTOFF_HZ, "highpass", fs=sr, output="sos")
+    state = np.zeros((sos.shape[0], 2))
+    prev = x[:1]
+    for first in range(0, frames, chunk_frames):
+        rows = slice(first, min(first + chunk_frames, frames))
+        c = x[rows.start * n : rows.stop * n]
+        C = c.reshape(-1, n)
+        rms[rows] = np.sqrt((C**2).mean(1)) + EPS
+
+        # Crackle: sharp peaks above 5 kHz (high crest factor of the HF band).
+        hf, state = sosfilt(sos, c, zi=state)
+        hf = hf.reshape(-1, n)
+        hf_crest[rows] = np.abs(hf).max(1) / (np.sqrt((hf**2).mean(1)) + EPS)
+
+        # Click: a jump between neighbouring samples out of proportion to the frame level.
+        jump[rows] = np.abs(np.diff(c, prepend=prev)).reshape(-1, n).max(1)
+        prev = c[-1:]
+
+        # Clipping: samples at the edge of full scale.
+        clip[rows] = (np.abs(C) > CLIP_LEVEL).sum(1)
+    return rms, hf_crest, jump, clip
+
+
 def frame_scores(
-    x: np.ndarray, sr: int = SAMPLE_RATE, frame: float = FRAME_SECONDS, z: float = DEFAULT_Z
+    x: np.ndarray,
+    sr: int = SAMPLE_RATE,
+    frame: float = FRAME_SECONDS,
+    z: float = DEFAULT_Z,
+    chunk_frames: int = CHUNK_FRAMES,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Score every frame of mono signal ``x``. Returns ``(score, kind)`` arrays.
 
@@ -62,26 +102,13 @@ def frame_scores(
         raise CrackleFinderError(
             f"Recording is too short: need at least {MIN_FRAMES * frame:g} s of audio."
         )
-    x = x[: frames * n]
-    X = x.reshape(frames, n)
-
-    rms = np.sqrt((X**2).mean(1)) + EPS
+    rms, hf_crest, jump, clip = frame_features(x[: frames * n], sr, n, chunk_frames)
     db = 20 * np.log10(rms)
 
     # Digital silence gives log(0) = -inf below; those frames just never score high.
     with np.errstate(divide="ignore", invalid="ignore"):
-        # Crackle: sharp peaks above 5 kHz (high crest factor of the HF band).
-        sos = butter(4, HF_CUTOFF_HZ, "highpass", fs=sr, output="sos")
-        hf = sosfilt(sos, x).reshape(frames, n)
-        hf_crest = np.abs(hf).max(1) / (np.sqrt((hf**2).mean(1)) + EPS)
         z_crest = robust_z(np.log(hf_crest))
-
-        # Click: a jump between neighbouring samples out of proportion to the frame level.
-        jump = np.abs(np.diff(x, prepend=x[0])).reshape(frames, n).max(1)
         z_jump = robust_z(np.log(jump / rms + EPS))
-
-    # Clipping: samples at the edge of full scale.
-    clip = (np.abs(X) > CLIP_LEVEL).sum(1)
 
     # Dropout: a silent frame between two loud ones.
     prev = np.r_[db[0], db[:-1]]

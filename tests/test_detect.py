@@ -9,11 +9,21 @@ from crackle_finder.detect import (
     CRACKLE,
     DROPOUT,
     detect,
+    frame_scores,
     merge_frames,
     robust_z,
 )
 
 TOLERANCE = 0.1
+
+
+@pytest.mark.parametrize("chunk_frames", [1, 7, 100, 10_000])
+def test_chunked_processing_is_bit_identical(defects, chunk_frames):
+    # 7 frames = 0.35 s, so chunk edges land inside the clicks, the clipping and the dropout.
+    whole = frame_scores(defects.audio, SR, chunk_frames=10**9)
+    chunked = frame_scores(defects.audio, SR, chunk_frames=chunk_frames)
+    np.testing.assert_array_equal(whole[0], chunked[0])
+    np.testing.assert_array_equal(whole[1], chunked[1])
 
 
 def near(events, t, kinds):

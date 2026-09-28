@@ -122,12 +122,11 @@ labelled by its highest-scoring frame.
   and surrounded by speech. Longer gaps look like pauses.
 - **Clipping scores** grow with the number of clipped samples, so heavy clipping
   outranks everything else in the top-N list.
-- **Memory**: the whole file is analyzed at once, roughly 3 GB of RAM per hour of audio.
+- **Memory**: the decoded audio is held in RAM, about 0.75 GB per hour of recording.
 - Scores are relative to the recording itself, so they are not comparable between files.
 
 ## Roadmap
 
-- Stream long files in chunks to cut memory use.
 - Per-channel analysis for stereo recordings.
 - Catch longer dropouts.
 - Optional HTML report with playable clips.
