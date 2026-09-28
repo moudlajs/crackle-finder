@@ -5,7 +5,7 @@ import logging
 import sys
 from pathlib import Path
 
-from crackle_finder import CrackleFinderError, __version__, audio, detect, report
+from crackle_finder import CrackleFinderError, __version__, audio, detect, download, report
 
 log = logging.getLogger("crackle_finder")
 
@@ -45,7 +45,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="crackle-finder",
         description="Find crackles, clicks, clipping and short dropouts in long recordings.",
     )
-    p.add_argument("inputs", nargs="+", metavar="INPUT", help="audio file(s) to analyze")
+    p.add_argument(
+        "inputs", nargs="+", metavar="INPUT", help="audio file(s) or http(s) URL(s) to analyze"
+    )
     p.add_argument(
         "--start",
         type=parse_time,
@@ -94,8 +96,9 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def analyze(path: Path, args: argparse.Namespace) -> Path:
-    """Analyze one file and write its report folder. Returns the folder."""
+def analyze(path: Path, args: argparse.Namespace, name: str | None = None) -> Path:
+    """Analyze one file and write its report folder, named after ``name``. Returns the folder."""
+    name = name or path.stem
     if not path.is_file():
         raise CrackleFinderError(f"{path}: no such file")
     log.info("Analyzing %s", path)
@@ -103,7 +106,7 @@ def analyze(path: Path, args: argparse.Namespace) -> Path:
     log.debug("Decoded %.1f s of audio", len(x) / detect.SAMPLE_RATE)
     events = detect.detect(x, detect.SAMPLE_RATE, offset=args.start, z=args.z, merge=args.merge)
 
-    out = args.out / report.safe_name(path.stem)
+    out = args.out / report.safe_name(name)
     out.mkdir(parents=True, exist_ok=True)
     params = {
         "start": args.start,
@@ -119,12 +122,12 @@ def analyze(path: Path, args: argparse.Namespace) -> Path:
     if not args.no_plot:
         log.info("Rendering overview.png")
         report.write_overview(
-            x, detect.SAMPLE_RATE, events, out / "overview.png", offset=args.start, title=path.name
+            x, detect.SAMPLE_RATE, events, out / "overview.png", offset=args.start, title=name
         )
     if not args.no_clips:
         write_clips(path, events, out / "clips", args.top)
 
-    print(f"\n{path.name}: {len(events)} event(s) -> {out}/")
+    print(f"\n{name}: {len(events)} event(s) -> {out}/")
     if events:
         print(report.format_table(events, args.top))
     else:
@@ -160,8 +163,12 @@ def main(argv: list[str] | None = None) -> int:
         log.error("--end must be after --start")
         return 2
     try:
-        for name in args.inputs:
-            analyze(Path(name), args)
+        for item in args.inputs:
+            if download.is_url(item):
+                path, title = download.fetch(item)
+                analyze(path, args, name=title)
+            else:
+                analyze(Path(item), args)
     except CrackleFinderError as e:
         log.error("%s", e)
         return 1
