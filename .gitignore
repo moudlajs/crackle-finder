@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Reports and audio never belong in the repo (test audio is generated at runtime).
+crackle-report/
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.opus
+*.labels.txt
+.DS_Store
