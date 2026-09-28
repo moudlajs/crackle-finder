@@ -10,6 +10,7 @@ from crackle_finder.detect import (
     CRACKLE,
     DROPOUT,
     detect,
+    dropout_frames,
     event_kind,
     frame_scores,
     merge_frames,
@@ -128,3 +129,65 @@ def test_heavy_clipping_no_longer_scores_in_the_hundreds(defects):
 )
 def test_event_kind_precedence(kinds, peak, expected):
     assert event_kind(np.array(kinds), peak) == expected
+
+
+# Typical podcast loudness: speech frames between about -23 and -14 dBFS.
+PODCAST_GAIN = 10 ** (10 / 20)
+
+
+def _with_gap(start: float, length: float, fade: float = 0.0) -> np.ndarray:
+    x = speech_like(30, seed=3) * np.float32(PODCAST_GAIN)
+    i, j = int(start * SR), int((start + length) * SR)
+    x[i:j] = 0
+    if fade:
+        # Speech fading out before the silence and back in after it, like a natural pause.
+        k = int(fade * SR)
+        x[i - k : i] *= np.linspace(1, 0, k, dtype=np.float32) ** 3
+        x[j : j + k] *= np.linspace(0, 1, k, dtype=np.float32) ** 3
+    return x
+
+
+# A gap is found when it covers whole frames and the frames just outside it are loud.
+# Gaps of 100-500 ms at podcast loudness are found at almost any start offset.
+@pytest.mark.parametrize(
+    ("start", "length"),
+    [(12.0, 0.06), (12.0, 0.15), (12.02, 0.1), (12.02, 0.15), (12.03, 0.3), (12.01, 0.45)],
+)
+def test_dropouts_up_to_half_a_second(start, length):
+    events = detect(_with_gap(start, length), SR)
+    assert near(events, start, {DROPOUT}), f"{length * 1000:.0f} ms dropout at {start} s missed"
+
+
+@pytest.mark.parametrize(
+    ("length", "fade"),
+    [
+        (0.7, 0.0),  # longer than 500 ms: a pause, not a dropout
+        (0.3, 0.15),  # speech fades out and back in
+        (0.3, 0.3),
+    ],
+)
+def test_pauses_are_not_dropouts(length, fade):
+    events = detect(_with_gap(12.0, length, fade), SR)
+    assert not [e for e in events if e.kind == DROPOUT]
+
+
+def test_silence_at_the_file_edges_is_not_a_dropout():
+    x = speech_like(30, seed=3) * np.float32(PODCAST_GAIN)
+    x[: int(0.2 * SR)] = 0
+    x[-int(0.2 * SR) :] = 0
+    assert not [e for e in detect(x, SR) if e.kind == DROPOUT]
+
+
+@pytest.mark.parametrize(
+    ("db", "expected"),
+    [
+        ([-20, -70, -20], [0, 1, 0]),
+        ([-20, -70, -70, -70, -20], [0, 1, 1, 1, 0]),
+        ([-20, -45, -70, -45, -20], [0, 0, 0, 0, 0]),  # quiet edges: could be a fade
+        ([-70, -20, -20], [0, 0, 0]),
+        ([-20] + [-70] * 11 + [-20], [0] * 13),  # 550 ms: too long
+        ([-20] + [-70] * 10 + [-20], [0] + [1] * 10 + [0]),
+    ],
+)
+def test_dropout_frames(db, expected):
+    assert dropout_frames(np.array(db, dtype=float)).tolist() == [bool(v) for v in expected]
