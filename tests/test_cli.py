@@ -67,6 +67,7 @@ def test_end_to_end(defects_wav, defects, tmp_path, capsys):
     data = json.loads((folder / "events.json").read_text())
     assert data["params"]["z"] == 6.0
     assert len(data["events"]) == 5
+    assert (folder / "overview.png").stat().st_size > 10_000
 
 
 @needs_ffmpeg
@@ -127,9 +128,14 @@ def test_clip_near_file_start_is_clamped(tmp_path):
 
 
 @needs_ffmpeg
-def test_no_clips(defects_wav, tmp_path):
-    assert cli.main([str(defects_wav), "--out", str(tmp_path / "r"), "--no-clips"]) == 0
-    assert not (tmp_path / "r" / "episode_01" / "clips").exists()
+def test_no_clips_no_plot(defects_wav, tmp_path):
+    assert (
+        cli.main([str(defects_wav), "--out", str(tmp_path / "r"), "--no-clips", "--no-plot"]) == 0
+    )
+    folder = tmp_path / "r" / "episode_01"
+    assert not (folder / "clips").exists()
+    assert not (folder / "overview.png").exists()
+    assert (folder / "timestamps.txt").exists()
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "abc"])
