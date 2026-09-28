@@ -20,3 +20,9 @@ def defects_wav(tmp_path, defects):
     path = tmp_path / "episode 01.wav"
     write_wav(path, defects.audio)
     return path
+
+
+@pytest.fixture(autouse=True)
+def isolated_cache(tmp_path, monkeypatch):
+    """Keep every test's download cache out of the real ~/.cache."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))

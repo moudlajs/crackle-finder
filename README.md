@@ -19,7 +19,11 @@ uv tool install git+https://github.com/moudlajs/crackle-finder
 ```sh
 crackle-finder episode.mp3
 crackle-finder episode.mp3 --start 45:00 --end 1:05:30 --z 5
+crackle-finder https://example.com/episode-42   # needs yt-dlp
 ```
+
+A URL is downloaded once with [yt-dlp](https://github.com/yt-dlp/yt-dlp) into
+`~/.cache/crackle-finder` and reused on later runs; the report is named after its title.
 
 Reports are written to `./crackle-report/<input-name>/`:
 `timestamps.txt` (paste into a message), `labels.txt` (Audacity label track),
