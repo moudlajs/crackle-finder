@@ -5,6 +5,7 @@ import sys
 
 import pytest
 from conftest import needs_ffmpeg
+from synth import speech_like, write_wav
 
 from crackle_finder import cli
 
@@ -53,7 +54,11 @@ def test_end_to_end(defects_wav, defects, tmp_path, capsys):
     assert cli.main([str(defects_wav), "--out", str(out)]) == 0
 
     folder = out / "episode_01"
-    assert f"5 event(s) -> {folder}/" in capsys.readouterr().out
+    stdout = capsys.readouterr().out
+    assert f"5 event(s) -> {folder}/" in stdout
+    assert "showing top 5 by score" in stdout
+    # Clipping scores highest, so it is rank 1 in the table and the clips.
+    assert stdout.splitlines()[-5].split()[:2] == ["1", "0:00:25"]
     lines = (folder / "timestamps.txt").read_text().splitlines()
     assert lines[0].startswith("0:00:05  ")
     assert any(line.startswith("0:00:25  clipping") for line in lines)
@@ -83,3 +88,52 @@ def test_runs_as_a_module_and_reports_errors_on_stderr(tmp_path):
     assert proc.returncode == 1
     assert proc.stdout == ""
     assert "no such file" in proc.stderr
+
+
+def clip_duration(path):
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return float(out.stdout)
+
+
+@needs_ffmpeg
+def test_clips_of_top_events(defects_wav, tmp_path):
+    clips = tmp_path / "r" / "episode_01" / "clips"
+    assert cli.main([str(defects_wav), "--out", str(tmp_path / "r")]) == 0
+    names = sorted(p.name for p in clips.iterdir())
+    assert names[0] == "001_0h00m25s_clipping.mp3"
+    assert len(names) == 5
+    assert clip_duration(clips / names[0]) == pytest.approx(3.0, abs=0.1)
+
+    # A rerun with a smaller --top leaves no stale clips behind.
+    assert cli.main([str(defects_wav), "--out", str(tmp_path / "r"), "--top", "2"]) == 0
+    assert len(list(clips.iterdir())) == 2
+
+
+@needs_ffmpeg
+def test_clip_near_file_start_is_clamped(tmp_path):
+    x = speech_like(20)
+    x[int(0.5 * 44100)] += 0.6
+    wav = tmp_path / "early.wav"
+    write_wav(wav, x)
+    assert cli.main([str(wav), "--out", str(tmp_path / "r")]) == 0
+    (clip,) = (tmp_path / "r" / "early" / "clips").iterdir()
+    assert clip.name == "001_0h00m00s_crackle.mp3"
+    assert clip_duration(clip) == pytest.approx(3.0, abs=0.1)
+
+
+@needs_ffmpeg
+def test_no_clips(defects_wav, tmp_path):
+    assert cli.main([str(defects_wav), "--out", str(tmp_path / "r"), "--no-clips"]) == 0
+    assert not (tmp_path / "r" / "episode_01" / "clips").exists()
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "abc"])
+def test_top_must_be_positive(value, capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["x.wav", "--top", value])
+    assert "whole number >= 1" in capsys.readouterr().err

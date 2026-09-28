@@ -4,6 +4,8 @@ import pytest
 
 from crackle_finder.detect import Event
 from crackle_finder.report import (
+    clip_name,
+    format_table,
     format_timestamp,
     safe_name,
     write_json,
@@ -79,3 +81,16 @@ def test_empty_report(tmp_path):
     path = tmp_path / "timestamps.txt"
     write_timestamps([], path)
     assert path.read_text() == ""
+
+
+def test_clip_name():
+    assert clip_name(1, EVENTS[0]) == "001_0h12m34s_crackle.mp3"
+    long = Event(start=4 * 3600 + 5.9, end=0, score=0, kind="dropout", hits=1)
+    assert clip_name(123, long) == "123_4h00m05s_dropout.mp3"
+
+
+def test_table_ranks_by_score_and_honours_top():
+    lines = format_table(EVENTS, top=1).splitlines()
+    assert lines[0] == "2 event(s), showing top 1 by score"
+    assert len(lines) == 3
+    assert lines[2].split() == ["1", "0:00:05", "0.05s", "25", "click", "1"]

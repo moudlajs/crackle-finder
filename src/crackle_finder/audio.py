@@ -39,3 +39,15 @@ def load_mono(path: str, sr: int, start: float = 0.0, end: float | None = None) 
         detail = proc.stderr.decode(errors="replace").strip()
         raise CrackleFinderError(f"ffmpeg could not decode {path}: {detail}")
     return np.frombuffer(proc.stdout, dtype=np.float32)
+
+
+def extract_clip(src: str, dst: str, start: float, duration: float) -> None:
+    """Cut ``duration`` seconds of ``src`` starting at ``start`` into mp3 file ``dst``."""
+    cmd = [require_ffmpeg(), "-nostdin", "-v", "error", "-y", "-ss", f"{max(start, 0.0):.3f}"]
+    cmd += ["-t", f"{duration:.3f}", "-i", str(src), "-vn", "-c:a", "libmp3lame", "-q:a", "4"]
+    cmd.append(str(dst))
+    log.debug("Running %s", " ".join(cmd))
+    proc = subprocess.run(cmd, capture_output=True, check=False)
+    if proc.returncode != 0:
+        detail = proc.stderr.decode(errors="replace").strip()
+        raise CrackleFinderError(f"ffmpeg could not extract a clip from {src}: {detail}")
