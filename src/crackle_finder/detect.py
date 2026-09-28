@@ -23,6 +23,7 @@ CLIP_MIN_SAMPLES = 3
 DROPOUT_DB = -60
 LOUD_DB = -35
 DROPOUT_BONUS = 5
+DROPOUT_MAX_FRAMES = 10  # 500 ms; longer silences are treated as pauses, not dropouts
 # Each clipped sample adds 1 to the score, up to this many. Uncapped (as in the
 # prototype) a clipped frame reaches ~2200 and crowds every other event out of the top N.
 CLIP_SCORE_CAP = 20
@@ -113,10 +114,7 @@ def frame_scores(
         z_crest = robust_z(np.log(hf_crest))
         z_jump = robust_z(np.log(jump / rms + EPS))
 
-    # Dropout: a silent frame between two loud ones.
-    prev = np.r_[db[0], db[:-1]]
-    nxt = np.r_[db[1:], db[-1]]
-    dropout = (db < DROPOUT_DB) & (prev > LOUD_DB) & (nxt > LOUD_DB)
+    dropout = dropout_frames(db)
 
     clipped = clip >= CLIP_MIN_SAMPLES
     score = np.maximum(z_crest, z_jump)
@@ -126,6 +124,29 @@ def frame_scores(
     score = np.where(clipped, np.maximum(score, z + np.minimum(clip, CLIP_SCORE_CAP)), score)
     score = np.where(dropout, np.maximum(score, z + DROPOUT_BONUS), score)
     return score, kind
+
+
+def dropout_frames(db: np.ndarray, max_frames: int = DROPOUT_MAX_FRAMES) -> np.ndarray:
+    """Mark runs of 1..``max_frames`` silent frames with a loud frame on both sides.
+
+    Audio that stops abruptly mid-speech and comes back is a dropout; a pause where
+    speech fades out first, or a long silence, is not. The prototype's rule is the
+    one-frame case. Runs touching either end of the recording never count.
+    """
+    silent = db < DROPOUT_DB
+    loud = db > LOUD_DB
+    edges = np.diff(np.r_[0, silent.astype(np.int8), 0])
+    dropout = np.zeros(len(db), dtype=bool)
+    for first, stop in zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1), strict=True):
+        if (
+            stop - first <= max_frames
+            and first > 0
+            and stop < len(db)
+            and loud[first - 1]
+            and loud[stop]
+        ):
+            dropout[first:stop] = True
+    return dropout
 
 
 def merge_frames(flagged: np.ndarray, gap: int) -> list[tuple[int, int]]:

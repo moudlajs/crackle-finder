@@ -107,7 +107,8 @@ four measurements:
 - **clipping**: at least 3 samples above 98.5 % of full scale. Each clipped sample adds
   1 to the score, up to 20, so heavy clipping ranks high without drowning out
   everything else.
-- **dropout**: a frame below -60 dBFS sandwiched between two frames above -35 dBFS.
+- **dropout**: 1-10 frames (up to 500 ms) below -60 dBFS with a frame above -35 dBFS
+  on both sides: the audio stops abruptly mid-speech and comes back.
 
 Crackle and click values are turned into robust z-scores (median and MAD instead of
 mean and standard deviation, so the defects themselves don't skew the baseline). A
@@ -121,15 +122,16 @@ highest-scoring frame decides between crackle and click.
 - **False positives**: sibilants ("s", "sh"), laughter, claps, and sharp percussion in
   intros can look like crackles. Check the clips; raise `--z` if there are too many.
 - **Mono downmix**: a defect in only one channel is diluted when the channels are mixed.
-- **Dropouts** are only caught when they are short (one silent frame, about 50-100 ms)
-  and surrounded by speech. Longer gaps look like pauses.
+- **Dropouts** are caught from about 100 ms (shorter ones only when they happen to
+  cover a whole 50 ms frame) up to 500 ms, when speech is loud right before and after.
+  A gap that starts or ends in a quiet syllable can be missed, and longer gaps look
+  like pauses. A noise gate that snaps shut within ~100 ms can be reported as one.
 - **Memory**: the decoded audio is held in RAM, about 0.75 GB per hour of recording.
 - Scores are relative to the recording itself, so they are not comparable between files.
 
 ## Roadmap
 
 - Per-channel analysis for stereo recordings.
-- Catch longer dropouts.
 - Optional HTML report with playable clips.
 
 ## Development
