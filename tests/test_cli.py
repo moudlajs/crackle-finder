@@ -5,9 +5,10 @@ import sys
 
 import pytest
 from conftest import needs_ffmpeg
-from synth import speech_like, write_wav
+from synth import speech_like, with_defects, write_wav
 
-from crackle_finder import cli
+from crackle_finder import CrackleFinderError, cli
+from crackle_finder.audio import write_fixed
 
 
 @pytest.mark.parametrize(
@@ -143,3 +144,80 @@ def test_top_must_be_positive(value, capsys):
     with pytest.raises(SystemExit):
         cli.main(["x.wav", "--top", value])
     assert "whole number >= 1" in capsys.readouterr().err
+
+
+@needs_ffmpeg
+def test_batch_directory(tmp_path, capsys):
+    episodes = tmp_path / "episodes"
+    episodes.mkdir()
+    write_wav(episodes / "ep1.wav", speech_like(20))
+    write_wav(episodes / "ep2.wav", with_defects(seed=2).audio)
+    write_wav(episodes / "ep10.wav", with_defects(seed=10).audio)
+    (episodes / "notes.txt").write_text("not audio")
+    out = tmp_path / "r"
+
+    assert cli.main([str(episodes), "--out", str(out), "--no-clips", "--no-plot"]) == 0
+
+    assert sorted(p.name for p in out.iterdir()) == ["ep1", "ep10", "ep2", "summary.txt"]
+    rows = [line.split() for line in (out / "summary.txt").read_text().splitlines()]
+    assert rows[1:] == [
+        ["ep1.wav", "0", "0", "0", "0", "0"],
+        ["ep2.wav", "3", "0", "1", "1", "5"],
+        ["ep10.wav", "3", "0", "1", "1", "5"],
+    ]
+    assert "Summary ->" in capsys.readouterr().out
+
+
+@needs_ffmpeg
+def test_batch_continues_past_a_bad_file(tmp_path, caplog):
+    episodes = tmp_path / "episodes"
+    episodes.mkdir()
+    (episodes / "ep1.mp3").write_text("not audio")
+    write_wav(episodes / "ep2.wav", speech_like(20))
+    out = tmp_path / "r"
+
+    assert cli.main([str(episodes), "--out", str(out), "--no-clips", "--no-plot"]) == 1
+
+    assert "ffmpeg could not decode" in caplog.text
+    assert (out / "ep2" / "events.json").exists()
+    assert "ep1.mp3  failed" in (out / "summary.txt").read_text()
+
+
+def test_empty_directory(tmp_path, caplog):
+    assert cli.main([str(tmp_path)]) == 1
+    assert "no audio files found" in caplog.text
+
+
+@needs_ffmpeg
+def test_same_stem_gets_its_own_folder(tmp_path):
+    for sub in ("a", "b"):
+        (tmp_path / sub).mkdir()
+        write_wav(tmp_path / sub / "ep.wav", speech_like(20))
+    out = tmp_path / "r"
+    args = [str(tmp_path / "a" / "ep.wav"), str(tmp_path / "b" / "ep.wav"), "--out", str(out)]
+    assert cli.main([*args, "--no-clips", "--no-plot"]) == 0
+    assert sorted(p.name for p in out.iterdir()) == ["ep", "ep_2", "summary.txt"]
+
+
+@needs_ffmpeg
+def test_fix_writes_a_repaired_copy_and_keeps_the_original(defects_wav, tmp_path, capsys):
+    original = defects_wav.read_bytes()
+    out = tmp_path / "r"
+    assert cli.main([str(defects_wav), "--out", str(out), "--fix", "--no-clips", "--no-plot"]) == 0
+    fixed = out / "episode_01" / "fixed.flac"
+    assert defects_wav.read_bytes() == original
+
+    # The declicker removes the injected clicks: analyzing the fixed copy finds no crackles.
+    capsys.readouterr()
+    assert cli.main([str(fixed), "--out", str(tmp_path / "r2"), "--no-clips", "--no-plot"]) == 0
+    data = json.loads((tmp_path / "r2" / "fixed" / "events.json").read_text())
+    # Skip the first second: the filters' warm-up leaves a faint artifact at 0 s.
+    clicks = [e for e in data["events"] if e["kind"] in {"click", "crackle"} and e["start"] > 1]
+    assert clicks == []
+
+
+def test_fix_refuses_to_overwrite_the_original(tmp_path):
+    src = tmp_path / "ep.flac"
+    src.write_bytes(b"")
+    with pytest.raises(CrackleFinderError, match="refusing to overwrite"):
+        write_fixed(str(src), str(tmp_path / "." / "ep.flac"))

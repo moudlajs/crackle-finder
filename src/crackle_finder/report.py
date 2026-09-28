@@ -50,6 +50,25 @@ def format_table(events: list[Event], top: int) -> str:
     return "\n".join(lines)
 
 
+def natural_key(name: str) -> list:
+    """Sort key that puts ``ep2`` before ``ep10``."""
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
+
+
+def format_summary(results: list[tuple[str, list[Event] | None]]) -> str:
+    """Event count per type per input, natural-sorted by name; ``None`` marks a failed input."""
+    rows = sorted(results, key=lambda r: natural_key(r[0]))
+    width = max([len("input"), *(len(name) for name, _ in rows)])
+    lines = [f"{'input':<{width}}  " + "  ".join(f"{k:>8}" for k in (*KINDS, "total"))]
+    for name, events in rows:
+        if events is None:
+            lines.append(f"{name:<{width}}  failed, see the log")
+            continue
+        counts = [sum(e.kind == k for e in events) for k in KINDS] + [len(events)]
+        lines.append(f"{name:<{width}}  " + "  ".join(f"{c:>8}" for c in counts))
+    return "\n".join(lines)
+
+
 def by_time(events: list[Event]) -> list[Event]:
     return sorted(events, key=lambda e: e.start)
 

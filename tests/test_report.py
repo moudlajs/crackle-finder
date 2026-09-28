@@ -5,8 +5,10 @@ import pytest
 from crackle_finder.detect import Event
 from crackle_finder.report import (
     clip_name,
+    format_summary,
     format_table,
     format_timestamp,
+    natural_key,
     safe_name,
     write_json,
     write_labels,
@@ -94,3 +96,16 @@ def test_table_ranks_by_score_and_honours_top():
     assert lines[0] == "2 event(s), showing top 1 by score"
     assert len(lines) == 3
     assert lines[2].split() == ["1", "0:00:05", "0.05s", "25", "click", "1"]
+
+
+def test_natural_key_sorts_episode_numbers():
+    names = ["ep10.mp3", "Ep2.mp3", "ep1.mp3", "bonus.mp3"]
+    assert sorted(names, key=natural_key) == ["bonus.mp3", "ep1.mp3", "Ep2.mp3", "ep10.mp3"]
+
+
+def test_summary_counts_per_type_sorted_by_name():
+    lines = format_summary([("ep10.mp3", EVENTS), ("ep2.mp3", []), ("ep3.mp3", None)]).splitlines()
+    assert lines[0].split() == ["input", "crackle", "click", "clipping", "dropout", "total"]
+    assert lines[1].split() == ["ep2.mp3", "0", "0", "0", "0", "0"]
+    assert lines[2].split() == ["ep3.mp3", "failed,", "see", "the", "log"]
+    assert lines[3].split() == ["ep10.mp3", "1", "1", "0", "0", "2"]

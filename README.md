@@ -20,7 +20,17 @@ uv tool install git+https://github.com/moudlajs/crackle-finder
 crackle-finder episode.mp3
 crackle-finder episode.mp3 --start 45:00 --end 1:05:30 --z 5
 crackle-finder https://example.com/episode-42   # needs yt-dlp
+crackle-finder episodes/                        # every audio file in the folder
+crackle-finder episode.mp3 --fix                # also write a repaired copy
 ```
+
+A directory analyzes every audio file in it and writes `summary.txt` with the event
+count per type per file, sorted by name, so you can see from which episode a problem
+started.
+
+`--fix` writes `fixed.flac` next to the report using ffmpeg's `adeclick` and `adeclip`
+filters on the whole file. The original is never modified. Dropouts are missing audio
+and cannot be fixed this way.
 
 A URL is downloaded once with [yt-dlp](https://github.com/yt-dlp/yt-dlp) into
 `~/.cache/crackle-finder` and reused on later runs; the report is named after its title.
